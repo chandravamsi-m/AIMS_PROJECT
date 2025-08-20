@@ -4,28 +4,21 @@ import numpy as np
 
 app = Flask(__name__)
 
-# Load model and label encoder
-model = joblib.load("survey_model.pkl")
+# Load models and encoder
+clf = joblib.load("survey_model_clf.pkl")   # classification
+reg = joblib.load("survey_model_reg.pkl")   # regression
 label_encoder = joblib.load("label_encoder.pkl")
 
-# Suggestion messages
-SUGGESTIONS = {
-  "Normal": "The patient's condition appears within normal limits. No immediate intervention is necessary. Continue routine observation and wellness monitoring.",
-  "Moderate": "The patient exhibits moderate symptoms. It is advised to begin a structured motor therapy program and schedule a follow-up assessment in 4 weeks.",
-  "Severe": "The patient presents with significant symptoms. Immediate referral to a neurologist or movement disorder specialist is strongly recommended for further evaluation and treatment planning."
-}
-
+required_fields = [
+    "facialMuscles", "lipsPerioral", "jaw", "tongue",
+    "upperExtremities", "lowerExtremities", "neckShouldersHips",
+    "severityOfMovements", "incapacitationDueToMovements", "patientAwareness",
+    "emotionalDistress", "globalRating"
+]
 
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
-
-    required_fields = [
-        "facialMuscles", "lipsPerioral", "jaw", "tongue",
-        "upperExtremities", "lowerExtremities", "neckShouldersHips",
-        "severityOfMovements", "incapacitationDueToMovements", "patientAwareness",
-        "emotionalDistress", "globalRating"
-    ]
 
     for field in required_fields:
         if field not in data:
@@ -35,14 +28,58 @@ def predict():
         input_data = [int(data[field]) for field in required_fields]
         input_array = np.array(input_data).reshape(1, -1)
 
-        prediction_encoded = model.predict(input_array)[0]
+        # ML prediction
+        prediction_encoded = clf.predict(input_array)[0]
         prediction_label = label_encoder.inverse_transform([prediction_encoded])[0]
 
-        suggestion = SUGGESTIONS.get(prediction_label, "No suggestion available for this result.")
+        # === Dynamic suggestions (trigger only when rating == 5) ===
+        suggestions = []
+
+        # 1. Face-related
+        if (data["facialMuscles"] == 5 or data["lipsPerioral"] == 5 or 
+            data["jaw"] == 5 or data["tongue"] == 5):
+            suggestions.append(
+                "Severe facial motor issues — urgent speech/swallowing evaluation needed."
+            )
+
+        # 2. Mobility-related (bones/joints)
+        if (data["neckShouldersHips"] == 5 or data["severityOfMovements"] == 5 or
+            data["upperExtremities"] == 5 or data["lowerExtremities"] == 5):
+            suggestions.append(
+                "Severe mobility impairment — urgent physiotherapy/neurology review."
+            )
+
+        # 3. Awareness / psychological
+        if data["patientAwareness"] == 5:
+            suggestions.append(
+                "Complete loss of awareness — requires continuous supervision."
+            )
+        if data["emotionalDistress"] == 5:
+            suggestions.append(
+                "Severe emotional distress — immediate psychiatric support advised."
+            )
+
+        # 4. Global rating / incapacitation
+        if data["incapacitationDueToMovements"] == 5:
+            suggestions.append(
+                "Fully incapacitated by movements — emergency care required."
+            )
+        if data["globalRating"] == 5:
+            suggestions.append(
+                "Critical overall condition — hospital admission advised."
+            )
+
+        # Default if no critical red flags
+        if not suggestions:
+            suggestions.append("No urgent issues detected — continue routine monitoring.")
+
+        # === FIX: use regression model for severity score ===
+        severity_score = round(float(reg.predict(input_array)[0]), 2)
 
         return jsonify({
             "assessment": prediction_label,
-            "suggestion": suggestion
+            "severityScore": severity_score,
+            "suggestions": suggestions
         })
 
     except Exception as e:

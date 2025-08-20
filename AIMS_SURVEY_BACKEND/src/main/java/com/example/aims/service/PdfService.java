@@ -11,6 +11,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.OutputStream;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -110,16 +111,7 @@ public class PdfService {
         Font labelFont = boldFont();
         Font valueFont = normalFont();
 
-        // 1. Calculate average score
-        double totalScore = survey.getFacialMuscles() + survey.getLipsPerioral() + survey.getJaw() + survey.getTongue() +
-                        survey.getUpperExtremities() + survey.getLowerExtremities() + survey.getNeckShouldersHips() +
-                        survey.getSeverityOfMovements() + survey.getIncapacitationDueToMovements() + survey.getPatientAwareness() +
-                        survey.getEmotionalDistress() + survey.getGlobalRating();
-
-        double averageScore = totalScore / 12.0;
-        String avgScoreStr = String.format("%.2f", averageScore);
-
-        // 2. Call Flask microservice for prediction
+        // 🔹 Prepare survey data to send to ML service
         Map<String, Integer> surveyData = new HashMap<>();
         surveyData.put("facialMuscles", survey.getFacialMuscles());
         surveyData.put("lipsPerioral", survey.getLipsPerioral());
@@ -134,14 +126,31 @@ public class PdfService {
         surveyData.put("emotionalDistress", survey.getEmotionalDistress());
         surveyData.put("globalRating", survey.getGlobalRating());
 
-        Map<String, String> result = mlService.getPrediction(surveyData);
-        String assessment = result.getOrDefault("assessment", "Unavailable");
-        String suggestion = result.getOrDefault("suggestion", "No recommendation.");
+        // 🔹 Get ML prediction (severity + assessment + suggestions)
+        Map<String, Object> result = mlService.getPredictionRaw(surveyData);
 
-        // 3. Add values to PDF
-        addLabelValue(document, "Average Score", avgScoreStr, labelFont, valueFont);
+        String severityScore = String.valueOf(result.getOrDefault("severityScore", "N/A"));
+        String assessment = String.valueOf(result.getOrDefault("assessment", "Unavailable"));
+        Object suggestionsObj = result.get("suggestions");
+
+        // 🔹 Handle suggestions (list or string)
+        String suggestionsText = "No recommendations.";
+        if (suggestionsObj instanceof List) {
+            @SuppressWarnings("unchecked")
+            List<String> suggestionsList = (List<String>) suggestionsObj;
+            suggestionsText = String.join("\n- ", suggestionsList);
+            suggestionsText = "- " + suggestionsText; // make it a bullet list
+        } else if (suggestionsObj != null) {
+            suggestionsText = suggestionsObj.toString();
+        }
+
+        // 🔹 Add values to PDF
+        addLabelValue(document, "Predicted Severity Score", severityScore, labelFont, valueFont);
         addLabelValue(document, "Assessment", assessment, labelFont, valueFont);
-        addLabelValue(document, "Suggestion", suggestion, labelFont, valueFont);
+
+        document.add(new Paragraph("Recommendations:", labelFont));
+        document.add(new Paragraph(suggestionsText, valueFont));
+        document.add(Chunk.NEWLINE);
     }
 
     private void addChartImage(Document document, String base64) {
@@ -214,7 +223,6 @@ public class PdfService {
             document.add(para);
         }
     }
-
 
     // Shared fonts
     private Font sectionFont() {
