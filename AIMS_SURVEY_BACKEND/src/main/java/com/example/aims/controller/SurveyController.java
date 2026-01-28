@@ -7,6 +7,7 @@ import com.example.aims.service.SurveyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.example.aims.service.MlService;
 
 import javax.servlet.http.HttpServletResponse;
 import java.util.List;
@@ -18,10 +19,12 @@ public class SurveyController {
 
     private final SurveyService surveyService;
     private final PdfService pdfService;
+    private final MlService mlService;
 
-    public SurveyController(SurveyService surveyService, PdfService pdfService) {
+    public SurveyController(SurveyService surveyService, PdfService pdfService, MlService mlService) {
         this.surveyService = surveyService;
         this.pdfService = pdfService;
+        this.mlService = mlService;
     }
 
     @PostMapping("/patients")
@@ -77,5 +80,30 @@ public class SurveyController {
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
+
+    @PostMapping("/predict-future")
+    public ResponseEntity<Map<String, Object>> predictFuture(@RequestBody Map<String, Object> surveyData) {
+        try {
+            Map<String, Object> result = mlService.getPredictionRaw(surveyData);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Prediction service failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/predict")
+    public ResponseEntity<Map<String, Object>> predictCurrent(@RequestBody Map<String, Object> surveyData) {
+        try {
+            Map<String, Object> result = mlService.getCurrentPrediction(surveyData);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Current prediction failed: " + e.getMessage()));
+        }
+    }
+
 
 }

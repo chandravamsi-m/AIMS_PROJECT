@@ -127,7 +127,8 @@ public class PdfService {
         surveyData.put("globalRating", survey.getGlobalRating());
 
         // 🔹 Get ML prediction (severity + assessment + suggestions)
-        Map<String, Object> result = mlService.getPredictionRaw(surveyData);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = mlService.getPredictionRaw((Map<String, Object>) (Map<?, ?>) surveyData);
 
         String severityScore = String.valueOf(result.getOrDefault("severityScore", "N/A"));
         String assessment = String.valueOf(result.getOrDefault("assessment", "Unavailable"));
